@@ -326,8 +326,8 @@ http://<DEPLOY_HOST>:8080
 
 | Environnement | Branche | Compose | Stack | Port public | Replicas applicatifs |
 | --- | --- | --- | --- | ---: | ---: |
-| Dev | `dev` | `docker-compose.dev.yml` | `e-commerce-dev` | `8082` | `1` |
-| Staging / preprod | `staging` | `docker-compose.staging.yml` | `e-commerce-staging` | `8081` | `2` |
+| Dev | `develop` | `docker-compose.dev.yml` | `ecommerce-dev` | `8082` | `1` |
+| Staging / preprod | `release/*` | `docker-compose.staging.yml` | `ecommerce-staging` | `8081` | `2` |
 | Production | `main` | `docker-compose.prod.yml` | `e-commerce` | `8080` | `2` |
 
 ### Rolling update
@@ -363,17 +363,13 @@ Workflow branches :
 | --- | :---: | :---: | :---: | --- |
 | `feature/*`, `bugfix/*`, `hotfix/*` | oui | non | non | aucun |
 | Merge Request | oui | non | non | aucun |
-| `dev` | oui | oui (`$CI_COMMIT_SHA`) | oui | `deploy_dev` manuel |
-| `staging` | oui | oui (`$CI_COMMIT_SHA`) | oui | `deploy_staging` manuel |
-| `main` | non | oui (`$CI_COMMIT_SHA` + `latest`) | non | `deploy_production` manuel |
+| `develop` | oui | oui (`$CI_COMMIT_SHA`) | oui | `deploy_development` manuel |
+| `release/*` | oui | oui (`$CI_COMMIT_SHA`) | oui | `deploy_staging` manuel |
+| `main` | oui | oui (`$CI_COMMIT_SHA` + `latest`) | oui | `deploy_production` manuel |
 
-Sur `main`, la pipeline est volontairement reduite a :
-
-- build/push des images
-- tag `latest`
-- deploy production manuel
-
-Les tests et Trivy restent sur `dev`, `staging`, branches de feature et merge requests.
+Les tests restent obligatoires sur toutes les branches GitFlow. La construction et
+le scan des images sont effectues sur `develop`, `release/*`, `main` et les tags.
+Les deploiements restent manuels.
 
 ### Jobs de deploy
 

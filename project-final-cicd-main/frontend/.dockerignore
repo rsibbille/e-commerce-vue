@@ -15,3 +15,5 @@ gl-code-quality-report.json
 .idea
 Dockerfile*
 README.md
+desktop.ini
+*.md

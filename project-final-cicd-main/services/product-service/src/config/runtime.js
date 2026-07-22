@@ -9,12 +9,18 @@ if (!allowedEnvironments.includes(appEnv)) {
   throw new Error(`APP_ENV invalide: ${appEnv}. Valeurs attendues: ${allowedEnvironments.join(', ')}`);
 }
 
+const port = Number(process.env.PORT || 3000);
+
+if (!Number.isInteger(port) || port < 1 || port > 65535) {
+  throw new Error(`PORT invalide: ${process.env.PORT}`);
+}
+
 export const runtimeConfig = {
   serviceName: 'product-service',
   appEnv,
   nodeEnv: process.env.NODE_ENV || appEnv,
   isTest: appEnv === 'test' || process.env.NODE_ENV === 'test',
-  port: Number(process.env.PORT || 3000),
+  port,
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:8080',
   mongodbUri: process.env.MONGODB_URI || 'mongodb://mongodb:27017/products',
 };

@@ -15,3 +15,5 @@ junit.xml
 .idea
 Dockerfile*
 *.deb
+desktop.ini
+*.md
