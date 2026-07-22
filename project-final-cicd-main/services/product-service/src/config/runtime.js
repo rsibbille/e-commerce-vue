@@ -22,5 +22,5 @@ export const runtimeConfig = {
   isTest: appEnv === 'test' || process.env.NODE_ENV === 'test',
   port,
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:8080',
-  mongodbUri: process.env.MONGODB_URI || 'mongodb://mongodb:27017/products',
+  mongodbUri: process.env.MONGODB_URI || 'mongodb://mongo-product:27017/products',
 };

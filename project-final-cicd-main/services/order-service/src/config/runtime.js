@@ -35,7 +35,7 @@ export const runtimeConfig = {
   isTest: appEnv === 'test' || process.env.NODE_ENV === 'test',
   port,
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:8080',
-  mongodbUri: process.env.MONGODB_URI || 'mongodb://mongodb:27017/orders',
+  mongodbUri: process.env.MONGODB_URI || 'mongodb://mongo-order:27017/orders',
   productServiceUrl: process.env.PRODUCT_SERVICE_URL || 'http://product-service:3000',
   jwtSecret,
 };

@@ -28,9 +28,9 @@ services:
       APP_ENV: development
       CORS_ORIGIN: "${DEV_CORS_ORIGIN:-http://localhost:8082}"
       JWT_SECRET: "${DEV_JWT_SECRET:-dev_jwt_secret_change_me}"
-      MONGODB_URI: mongodb://mongodb:27017/auth_dev
-    networks: [backend, data]
-    depends_on: [mongodb]
+      MONGODB_URI: mongodb://mongo-auth:27017/auth_dev
+    networks: [backend, data-auth]
+    depends_on: [mongo-auth]
     deploy:
       replicas: 1
       restart_policy:
@@ -44,9 +44,9 @@ services:
     environment:
       APP_ENV: development
       CORS_ORIGIN: "${DEV_CORS_ORIGIN:-http://localhost:8082}"
-      MONGODB_URI: mongodb://mongodb:27017/products_dev
-    networks: [backend, data]
-    depends_on: [mongodb]
+      MONGODB_URI: mongodb://mongo-product:27017/products_dev
+    networks: [backend, data-product]
+    depends_on: [mongo-product]
     deploy:
       replicas: 1
       restart_policy:
@@ -61,23 +61,53 @@ services:
       APP_ENV: development
       CORS_ORIGIN: "${DEV_CORS_ORIGIN:-http://localhost:8082}"
       JWT_SECRET: "${DEV_JWT_SECRET:-dev_jwt_secret_change_me}"
-      MONGODB_URI: mongodb://mongodb:27017/orders_dev
+      MONGODB_URI: mongodb://mongo-order:27017/orders_dev
       PRODUCT_SERVICE_URL: http://product-service:3000
-    networks: [backend, data]
-    depends_on: [mongodb]
+    networks: [backend, data-order]
+    depends_on: [mongo-order]
     deploy:
       replicas: 1
       restart_policy:
         condition: on-failure
 
-  mongodb:
+  mongo-auth:
     image: mongo:4.4.18
     command: ["mongod", "--bind_ip_all"]
     volumes:
-      - mongodb_dev_data:/data/db
-    networks:
-      data:
-        aliases: [mongodb]
+      - mongo_auth_dev_data:/data/db
+    networks: [data-auth]
+    healthcheck:
+      test: ["CMD-SHELL", "mongo --quiet --eval 'quit(db.runCommand({ ping: 1 }).ok ? 0 : 2)'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  mongo-product:
+    image: mongo:4.4.18
+    command: ["mongod", "--bind_ip_all"]
+    volumes:
+      - mongo_product_dev_data:/data/db
+    networks: [data-product]
+    healthcheck:
+      test: ["CMD-SHELL", "mongo --quiet --eval 'quit(db.runCommand({ ping: 1 }).ok ? 0 : 2)'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  mongo-order:
+    image: mongo:4.4.18
+    command: ["mongod", "--bind_ip_all"]
+    volumes:
+      - mongo_order_dev_data:/data/db
+    networks: [data-order]
     healthcheck:
       test: ["CMD-SHELL", "mongo --quiet --eval 'quit(db.runCommand({ ping: 1 }).ok ? 0 : 2)'"]
       interval: 10s
@@ -89,7 +119,9 @@ services:
         condition: on-failure
 
 volumes:
-  mongodb_dev_data:
+  mongo_auth_dev_data:
+  mongo_product_dev_data:
+  mongo_order_dev_data:
 
 networks:
   frontend:
@@ -97,6 +129,12 @@ networks:
   backend:
     driver: overlay
     internal: true
-  data:
+  data-auth:
+    driver: overlay
+    internal: true
+  data-product:
+    driver: overlay
+    internal: true
+  data-order:
     driver: overlay
     internal: true

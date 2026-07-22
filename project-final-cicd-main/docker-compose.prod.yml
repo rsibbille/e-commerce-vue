@@ -34,9 +34,9 @@ services:
       NODE_ENV: production
       CORS_ORIGIN: "${CORS_ORIGIN:?CORS_ORIGIN is required}"
       JWT_SECRET_FILE: /run/secrets/jwt_secret
-      MONGODB_URI: mongodb://mongodb:27017/auth
+      MONGODB_URI: mongodb://mongo-auth:27017/auth
     secrets: [jwt_secret]
-    networks: [backend, data]
+    networks: [backend, data-auth]
     deploy: *app-deploy
 
   product-service:
@@ -45,8 +45,8 @@ services:
       APP_ENV: production
       NODE_ENV: production
       CORS_ORIGIN: "${CORS_ORIGIN:?CORS_ORIGIN is required}"
-      MONGODB_URI: mongodb://mongodb:27017/products
-    networks: [backend, data]
+      MONGODB_URI: mongodb://mongo-product:27017/products
+    networks: [backend, data-product]
     deploy: *app-deploy
 
   order-service:
@@ -56,20 +56,54 @@ services:
       NODE_ENV: production
       CORS_ORIGIN: "${CORS_ORIGIN:?CORS_ORIGIN is required}"
       JWT_SECRET_FILE: /run/secrets/jwt_secret
-      MONGODB_URI: mongodb://mongodb:27017/orders
+      MONGODB_URI: mongodb://mongo-order:27017/orders
       PRODUCT_SERVICE_URL: http://product-service:3000
     secrets: [jwt_secret]
-    networks: [backend, data]
+    networks: [backend, data-order]
     deploy: *app-deploy
 
-  mongodb:
+  mongo-auth:
     image: mongo:4.4.18
     command: ["mongod", "--bind_ip_all"]
     volumes:
-      - mongodb_prod_data:/data/db
-    networks:
-      data:
-        aliases: [mongodb]
+      - mongo_auth_prod_data:/data/db
+    networks: [data-auth]
+    healthcheck:
+      test: ["CMD-SHELL", "mongo --quiet --eval 'quit(db.runCommand({ ping: 1 }).ok ? 0 : 2)'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      placement:
+        constraints: [node.role == manager]
+
+  mongo-product:
+    image: mongo:4.4.18
+    command: ["mongod", "--bind_ip_all"]
+    volumes:
+      - mongo_product_prod_data:/data/db
+    networks: [data-product]
+    healthcheck:
+      test: ["CMD-SHELL", "mongo --quiet --eval 'quit(db.runCommand({ ping: 1 }).ok ? 0 : 2)'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      placement:
+        constraints: [node.role == manager]
+
+  mongo-order:
+    image: mongo:4.4.18
+    command: ["mongod", "--bind_ip_all"]
+    volumes:
+      - mongo_order_prod_data:/data/db
+    networks: [data-order]
     healthcheck:
       test: ["CMD-SHELL", "mongo --quiet --eval 'quit(db.runCommand({ ping: 1 }).ok ? 0 : 2)'"]
       interval: 10s
@@ -88,7 +122,9 @@ secrets:
     name: ecommerce_production_jwt_secret
 
 volumes:
-  mongodb_prod_data:
+  mongo_auth_prod_data:
+  mongo_product_prod_data:
+  mongo_order_prod_data:
 
 networks:
   frontend:
@@ -96,6 +132,12 @@ networks:
   backend:
     driver: overlay
     internal: true
-  data:
+  data-auth:
+    driver: overlay
+    internal: true
+  data-product:
+    driver: overlay
+    internal: true
+  data-order:
     driver: overlay
     internal: true

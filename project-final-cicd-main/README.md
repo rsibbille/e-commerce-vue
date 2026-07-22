@@ -27,7 +27,9 @@ Services applicatifs :
 | `auth-service` | Authentification JWT | `3001` |
 | `product-service` | Produits et panier | `3000` |
 | `order-service` | Commandes | `3002` |
-| `mongodb` | Base MongoDB commune, avec une base logique par service | `27017` |
+| `mongo-auth` | Base MongoDB dédiée à l'authentification | `27017` |
+| `mongo-product` | Base MongoDB dédiée aux produits et paniers | `27017` |
+| `mongo-order` | Base MongoDB dédiée aux commandes | `27017` |
 
 Routes API exposees par le frontend :
 
@@ -52,38 +54,49 @@ mongo:4.4.18
 
 Ce choix est volontaire. MongoDB 5/6 peut echouer sur certaines machines sans support CPU AVX. L'image `mongo:4.4.18` evite ce probleme et fonctionne mieux sur les environnements de type Debian 12, VM et machines de cours.
 
-### Bases logiques
+### Instances dédiées
 
-Un seul conteneur MongoDB est lance, mais chaque backend utilise sa propre base :
+Chaque backend utilise sa propre instance MongoDB, son propre volume persistant et
+son propre réseau de données interne :
 
-| Service | URI | Base |
-| --- | --- | --- |
-| `auth-service` | `mongodb://mongodb:27017/auth` | `auth` |
-| `product-service` | `mongodb://mongodb:27017/products` | `products` |
-| `order-service` | `mongodb://mongodb:27017/orders` | `orders` |
+| Service | Instance | URI | Réseau |
+| --- | --- | --- | --- |
+| `auth-service` | `mongo-auth` | `mongodb://mongo-auth:27017/auth` | `data-auth` |
+| `product-service` | `mongo-product` | `mongodb://mongo-product:27017/products` | `data-product` |
+| `order-service` | `mongo-order` | `mongodb://mongo-order:27017/orders` | `data-order` |
 
-Les stacks Swarm dev et staging utilisent le meme principe avec des bases suffixees (`auth_dev`, `products_dev`, `orders_dev`, puis `auth_staging`, `products_staging`, `orders_staging`) pour rendre l'environnement visible dans MongoDB. Comme chaque stack possede aussi son propre service MongoDB et son propre volume Docker, les donnees restent separees par environnement.
+Les stacks Swarm dev et staging utilisent des bases suffixees (`auth_dev`,
+`products_dev`, `orders_dev`, puis `auth_staging`, `products_staging`,
+`orders_staging`). Les trois instances MongoDB restent séparées dans chaque
+environnement.
 
-Le hostname `mongodb` vient du nom de service Docker Compose/Swarm et de l'alias reseau. Les backends ne doivent pas utiliser `localhost` pour se connecter a MongoDB dans Docker.
+Les hostnames viennent des noms de services Docker Compose/Swarm. Les backends ne
+doivent pas utiliser `localhost` pour se connecter à MongoDB dans Docker.
 
 ### Persistance
 
-MongoDB stocke ses donnees dans le volume Docker :
+Les instances MongoDB stockent leurs données dans trois volumes Docker :
 
 ```text
-mongodb_data:/data/db
+mongo_auth_data:/data/db
+mongo_product_data:/data/db
+mongo_order_data:/data/db
 ```
 
-En local, ce volume est cree par `docker-compose.yml`.
+En local, ces volumes sont créés par `docker-compose.yml`.
 
-En Swarm, le volume est un volume local Docker sur le node qui heberge la tache `mongodb`. Le service MongoDB est donc configure avec :
+En Swarm, chaque volume est local au nœud qui héberge la tâche MongoDB
+correspondante. Chaque service MongoDB est configuré avec :
 
 ```yaml
 deploy:
   replicas: 1
 ```
 
-Point important : ce n'est pas un cluster MongoDB replique. Si la tache MongoDB est redeployee sur un autre node Swarm, elle peut se retrouver avec un volume local different. Pour un vrai environnement de production, il faudrait utiliser un stockage persistant partage, une contrainte de placement sur un node donne, ou un service MongoDB externe manage.
+Point important : ce ne sont pas des clusters MongoDB répliqués. Si une tâche est
+redéployée sur un autre nœud Swarm, elle peut retrouver un volume local différent.
+Pour une production réelle, utiliser un stockage partagé, une contrainte de
+placement ou des services MongoDB managés.
 
 ### Healthcheck
 
@@ -142,7 +155,9 @@ docker exec <mongodb-container-id> mongorestore --archive=/tmp/mongodb.archive -
 | product-service | `3000` | interne | interne |
 | auth-service | `3001` | interne | interne |
 | order-service | `3002` | interne | interne |
-| mongodb | `27017` | interne | interne |
+| mongo-auth | interne | interne | interne |
+| mongo-product | interne | interne | interne |
+| mongo-order | interne | interne | interne |
 
 ## Variables
 
@@ -422,28 +437,28 @@ Les variables GitLab suivantes sont fournies automatiquement par GitLab :
 Verifier les logs :
 
 ```bash
-docker-compose logs mongodb
+docker-compose logs mongo-auth mongo-product mongo-order
 ```
 
 En Swarm :
 
 ```bash
-docker service ps --no-trunc e-commerce_mongodb
-docker service logs --tail=100 e-commerce_mongodb
+docker service ps --no-trunc e-commerce_mongo-auth
+docker service logs --tail=100 e-commerce_mongo-auth
 ```
 
 Si les logs indiquent une erreur AVX avec MongoDB 5/6, verifier que les compose utilisent bien `mongo:4.4.18`.
 
-### Backend : `getaddrinfo ENOTFOUND mongodb`
+### Backend : `getaddrinfo ENOTFOUND mongo-*`
 
-Cela signifie que le backend ne resout pas le hostname `mongodb`.
+Cela signifie que le backend ne résout pas le hostname de son instance MongoDB.
 
 Verifier :
 
-- le service backend est bien sur le meme reseau Docker que `mongodb` ;
-- l'URI est bien `mongodb://mongodb:27017/<db>` ;
-- le service `mongodb` est demarre et sain ;
-- en Swarm, l'alias reseau `mongodb` existe dans `docker-compose.dev.yml`, `docker-compose.staging.yml` et `docker-compose.prod.yml`.
+- `auth-service` partage uniquement `data-auth` avec `mongo-auth` ;
+- `product-service` partage uniquement `data-product` avec `mongo-product` ;
+- `order-service` partage uniquement `data-order` avec `mongo-order` ;
+- l'URI utilise le hostname dédié et l'instance correspondante est saine.
 
 ### Image introuvable pendant un deploy Swarm
 

@@ -15,6 +15,7 @@ curl --fail http://127.0.0.1:8080/health
 curl --fail http://127.0.0.1:8080/api/products
 ```
 
-Le volume MongoDB est local au manager. Sauvegarder regulierement avec
-`mongodump`. Pour une production multi-node reelle, employer un stockage partage
-ou un service MongoDB manage.
+Les trois volumes MongoDB sont locaux au manager. Sauvegarder régulièrement
+`mongo-auth`, `mongo-product` et `mongo-order` avec `mongodump`. Pour une
+production multi-node réelle, employer un stockage partagé ou des services
+MongoDB managés.
