@@ -30,10 +30,10 @@ export default defineConfig({
         changeOrigin: true,
         timeout: 60000, // 60 secondes
         configure: (proxy) => {
-          proxy.on('proxyReq', (proxyReq, req) => {
+          proxy.on('proxyReq', (proxyReq) => {
             console.log(`[VITE PROXY] Proxying request to: ${proxyReq.path}`);
           });
-          proxy.on('proxyRes', (proxyRes, req) => {
+          proxy.on('proxyRes', (proxyRes) => {
             console.log(`[VITE PROXY] Response received with status: ${proxyRes.statusCode}`);
           });
           proxy.on('error', (err) => {
