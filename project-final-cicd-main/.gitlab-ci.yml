@@ -1,0 +1,288 @@
+stages:
+  - lint
+  - test
+  - quality
+  - build
+  - scan
+  - deploy
+
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH =~ /^(main|develop)$/'
+    - if: '$CI_COMMIT_BRANCH =~ /^(feature|release|hotfix)\/.+$/'
+    - if: '$CI_COMMIT_TAG'
+
+default:
+  interruptible: true
+  retry:
+    max: 1
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+
+.node-job:
+  image: node:20-bookworm-slim
+  cache:
+    key: "npm-${CI_COMMIT_REF_SLUG}"
+    paths:
+      - .npm/
+      - .cache/mongodb-binaries/
+  variables:
+    npm_config_cache: "$CI_PROJECT_DIR/.npm"
+    MONGOMS_DOWNLOAD_DIR: "$CI_PROJECT_DIR/.cache/mongodb-binaries"
+
+lint_frontend:
+  extends: .node-job
+  stage: lint
+  script:
+    - cd frontend
+    - npm ci
+    - npm run lint:report
+  artifacts:
+    when: always
+    paths:
+      - frontend/gl-code-quality-report.json
+    expire_in: 1 week
+
+lint_product_service:
+  extends: .node-job
+  stage: lint
+  script:
+    - cd services/product-service
+    - npm ci
+    - npm run lint
+  artifacts:
+    when: always
+    paths:
+      - services/product-service/gl-code-quality-report.json
+    expire_in: 1 week
+
+.test-service:
+  extends: .node-job
+  stage: test
+  variables:
+    NODE_ENV: test
+    APP_ENV: test
+    JWT_SECRET: test_jwt_secret_ci_only
+  artifacts:
+    when: always
+    paths:
+      - "*/coverage/"
+      - "services/*/coverage/"
+      - "*/test-results/"
+    expire_in: 1 week
+
+.test-backend:
+  extends: .test-service
+  services:
+    - name: mongo:4.4.18
+      alias: mongo
+  variables:
+    NODE_ENV: test
+    APP_ENV: test
+    JWT_SECRET: test_jwt_secret_ci_only
+    USE_EXTERNAL_MONGODB: "true"
+
+test_frontend:
+  extends: .test-service
+  script:
+    - cd frontend
+    - npm ci
+    - npm run test:coverage
+  artifacts:
+    when: always
+    reports:
+      junit: frontend/test-results/junit.xml
+    paths:
+      - frontend/coverage/
+      - frontend/test-results/
+    expire_in: 1 week
+
+test_auth_service:
+  extends: .test-backend
+  variables:
+    MONGODB_URI: mongodb://mongo:27017/auth_test
+  script:
+    - cd services/auth-service
+    - npm ci
+    - npm test
+
+test_product_service:
+  extends: .test-backend
+  variables:
+    MONGODB_URI: mongodb://mongo:27017/products_test
+  script:
+    - cd services/product-service
+    - npm ci
+    - npm test
+
+test_order_service:
+  extends: .test-backend
+  variables:
+    MONGODB_URI: mongodb://mongo:27017/orders_test
+  script:
+    - cd services/order-service
+    - npm ci
+    - npm test
+
+sonarqube:
+  stage: quality
+  image:
+    name: sonarsource/sonar-scanner-cli:latest
+    entrypoint: [""]
+  needs:
+    - job: test_frontend
+      artifacts: true
+    - job: test_auth_service
+      artifacts: true
+    - job: test_product_service
+      artifacts: true
+    - job: test_order_service
+      artifacts: true
+  variables:
+    SONAR_USER_HOME: "$CI_PROJECT_DIR/.sonar"
+    GIT_DEPTH: "0"
+  cache:
+    key: sonar
+    paths:
+      - .sonar/cache
+  script:
+    - sonar-scanner -Dsonar.host.url="$SONAR_HOST_URL" -Dsonar.token="$SONAR_TOKEN" -Dsonar.qualitygate.wait=true
+  rules:
+    - if: '$SONAR_HOST_URL == null || $SONAR_TOKEN == null'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH =~ /^(develop|main)$/'
+    - if: '$CI_COMMIT_BRANCH =~ /^release\/.+$/'
+
+build_images:
+  stage: build
+  image: docker:27-cli
+  services:
+    - name: docker:27-dind
+      alias: docker
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_BUILDKIT: "1"
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+  script:
+    - docker build --target production --pull -t "$CI_REGISTRY_IMAGE/frontend:$CI_COMMIT_SHA" frontend
+    - docker build --target production --pull -t "$CI_REGISTRY_IMAGE/auth-service:$CI_COMMIT_SHA" services/auth-service
+    - docker build --target production --pull -t "$CI_REGISTRY_IMAGE/product-service:$CI_COMMIT_SHA" services/product-service
+    - docker build --target production --pull -t "$CI_REGISTRY_IMAGE/order-service:$CI_COMMIT_SHA" services/order-service
+    - docker push "$CI_REGISTRY_IMAGE/frontend:$CI_COMMIT_SHA"
+    - docker push "$CI_REGISTRY_IMAGE/auth-service:$CI_COMMIT_SHA"
+    - docker push "$CI_REGISTRY_IMAGE/product-service:$CI_COMMIT_SHA"
+    - docker push "$CI_REGISTRY_IMAGE/order-service:$CI_COMMIT_SHA"
+    - |
+      if [ "$CI_COMMIT_BRANCH" = "main" ]; then
+        for service in frontend auth-service product-service order-service; do
+          docker tag "$CI_REGISTRY_IMAGE/$service:$CI_COMMIT_SHA" "$CI_REGISTRY_IMAGE/$service:latest"
+          docker push "$CI_REGISTRY_IMAGE/$service:latest"
+        done
+      fi
+  rules:
+    - if: '$CI_COMMIT_BRANCH =~ /^(develop|main)$/'
+    - if: '$CI_COMMIT_BRANCH =~ /^release\/.+$/'
+    - if: '$CI_COMMIT_TAG'
+
+trivy_images:
+  stage: scan
+  image:
+    name: aquasec/trivy:latest
+    entrypoint: [""]
+  needs: [build_images]
+  variables:
+    TRIVY_CACHE_DIR: "$CI_PROJECT_DIR/.trivycache"
+    TRIVY_USERNAME: "$CI_REGISTRY_USER"
+    TRIVY_PASSWORD: "$CI_REGISTRY_PASSWORD"
+    TRIVY_NO_PROGRESS: "true"
+  cache:
+    key: trivy
+    paths:
+      - .trivycache/
+  script:
+    - trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed "$CI_REGISTRY_IMAGE/frontend:$CI_COMMIT_SHA"
+    - trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed "$CI_REGISTRY_IMAGE/auth-service:$CI_COMMIT_SHA"
+    - trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed "$CI_REGISTRY_IMAGE/product-service:$CI_COMMIT_SHA"
+    - trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed "$CI_REGISTRY_IMAGE/order-service:$CI_COMMIT_SHA"
+  rules:
+    - if: '$CI_COMMIT_BRANCH =~ /^(develop|main)$/'
+    - if: '$CI_COMMIT_BRANCH =~ /^release\/.+$/'
+    - if: '$CI_COMMIT_TAG'
+
+.deploy-swarm:
+  stage: deploy
+  image: docker:27-cli
+  tags: [swarm-manager]
+  variables:
+    IMAGE_TAG: "$CI_COMMIT_SHA"
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+  script:
+    - |
+      if [ -n "${SWARM_SECRET_NAME:-}" ]; then
+        docker secret inspect "$SWARM_SECRET_NAME" >/dev/null
+      fi
+    - docker stack deploy --with-registry-auth -c "$COMPOSE_FILE" "$STACK_NAME"
+    - docker stack services "$STACK_NAME"
+    - |
+      attempts=0
+      until wget -q -O /dev/null "$ENVIRONMENT_URL/health"; do
+        attempts=$((attempts + 1))
+        if [ "$attempts" -ge 30 ]; then
+          docker stack services "$STACK_NAME"
+          docker service ps --no-trunc "${STACK_NAME}_frontend"
+          exit 1
+        fi
+        sleep 5
+      done
+    - wget -q -O /dev/null "$ENVIRONMENT_URL/api/products"
+  environment:
+    name: "$ENVIRONMENT_NAME"
+    url: "$ENVIRONMENT_URL"
+  interruptible: false
+
+deploy_development:
+  extends: .deploy-swarm
+  needs: [trivy_images]
+  variables:
+    COMPOSE_FILE: docker-compose.dev.yml
+    STACK_NAME: ecommerce-dev
+    ENVIRONMENT_NAME: development
+    ENVIRONMENT_URL: "http://$DEPLOY_HOST:$DEV_FRONTEND_PORT"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+      when: manual
+
+deploy_staging:
+  extends: .deploy-swarm
+  needs: [trivy_images]
+  variables:
+    COMPOSE_FILE: docker-compose.staging.yml
+    STACK_NAME: ecommerce-staging
+    ENVIRONMENT_NAME: staging
+    ENVIRONMENT_URL: "http://$DEPLOY_HOST:$STAGING_FRONTEND_PORT"
+    SWARM_SECRET_NAME: ecommerce_staging_jwt_secret
+  rules:
+    - if: '$CI_COMMIT_BRANCH =~ /^release\/.+$/'
+      when: manual
+
+deploy_production:
+  extends: .deploy-swarm
+  needs: [trivy_images]
+  variables:
+    COMPOSE_FILE: docker-compose.prod.yml
+    STACK_NAME: ecommerce-production
+    ENVIRONMENT_NAME: production
+    ENVIRONMENT_URL: "http://$DEPLOY_HOST:$PRODUCTION_FRONTEND_PORT"
+    SWARM_SECRET_NAME: ecommerce_production_jwt_secret
+  environment:
+    name: production
+    url: "$ENVIRONMENT_URL"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual

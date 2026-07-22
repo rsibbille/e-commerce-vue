@@ -15,13 +15,8 @@ cd services/product-service && npm ci && npm test
 cd services/order-service && npm ci && npm test
 ```
 
-Avec MongoDB Docker externe pour les tests backend :
-
-```bash
-docker-compose up -d mongodb
-cd services/auth-service
-USE_EXTERNAL_MONGODB=true MONGODB_URI=mongodb://localhost:27017/auth_test JWT_SECRET=test_jwt_secret npm test
-```
+Les tests backend utilisent `mongodb-memory-server` par défaut. Les instances
+MongoDB Compose ne publient volontairement aucun port sur l'hôte.
 
 Healthchecks en dev :
 

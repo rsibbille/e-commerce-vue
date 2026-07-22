@@ -1,0 +1,140 @@
+name: ecommerce-vue
+
+x-backend-common: &backend-common
+  restart: unless-stopped
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      target: production
+    environment:
+      PORT: 8080
+      AUTH_SERVICE_URL: http://auth-service:3001
+      PRODUCT_SERVICE_URL: http://product-service:3000
+      ORDER_SERVICE_URL: http://order-service:3002
+    ports:
+      - "${FRONTEND_PORT:-8080}:8080"
+    networks:
+      - frontend
+      - backend
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      product-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+    restart: unless-stopped
+
+  auth-service:
+    <<: *backend-common
+    build:
+      context: ./services/auth-service
+      target: production
+    environment:
+      APP_ENV: development
+      PORT: 3001
+      CORS_ORIGIN: "${CORS_ORIGIN:-http://localhost:8080}"
+      JWT_SECRET: "${JWT_SECRET:-dev_jwt_secret_change_me}"
+      MONGODB_URI: "${AUTH_MONGODB_URI:-mongodb://mongo-auth:27017/auth}"
+    networks: [backend, data-auth]
+    depends_on:
+      mongo-auth:
+        condition: service_healthy
+    ports:
+      - "${AUTH_PORT:-3001}:3001"
+
+  product-service:
+    <<: *backend-common
+    build:
+      context: ./services/product-service
+      target: production
+    environment:
+      APP_ENV: development
+      PORT: 3000
+      CORS_ORIGIN: "${CORS_ORIGIN:-http://localhost:8080}"
+      MONGODB_URI: "${PRODUCT_MONGODB_URI:-mongodb://mongo-product:27017/products}"
+    networks: [backend, data-product]
+    depends_on:
+      mongo-product:
+        condition: service_healthy
+    ports:
+      - "${PRODUCT_PORT:-3000}:3000"
+
+  order-service:
+    <<: *backend-common
+    build:
+      context: ./services/order-service
+      target: production
+    environment:
+      APP_ENV: development
+      PORT: 3002
+      CORS_ORIGIN: "${CORS_ORIGIN:-http://localhost:8080}"
+      JWT_SECRET: "${JWT_SECRET:-dev_jwt_secret_change_me}"
+      MONGODB_URI: "${ORDER_MONGODB_URI:-mongodb://mongo-order:27017/orders}"
+      PRODUCT_SERVICE_URL: http://product-service:3000
+    networks: [backend, data-order]
+    depends_on:
+      mongo-order:
+        condition: service_healthy
+    ports:
+      - "${ORDER_PORT:-3002}:3002"
+
+  mongo-auth:
+    image: mongo:4.4.18
+    command: ["mongod", "--bind_ip_all"]
+    volumes:
+      - mongo_auth_data:/data/db
+    networks: [data-auth]
+    healthcheck:
+      test: ["CMD-SHELL", "mongo --quiet --eval 'quit(db.runCommand({ ping: 1 }).ok ? 0 : 2)'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  mongo-product:
+    image: mongo:4.4.18
+    command: ["mongod", "--bind_ip_all"]
+    volumes:
+      - mongo_product_data:/data/db
+    networks: [data-product]
+    healthcheck:
+      test: ["CMD-SHELL", "mongo --quiet --eval 'quit(db.runCommand({ ping: 1 }).ok ? 0 : 2)'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  mongo-order:
+    image: mongo:4.4.18
+    command: ["mongod", "--bind_ip_all"]
+    volumes:
+      - mongo_order_data:/data/db
+    networks: [data-order]
+    healthcheck:
+      test: ["CMD-SHELL", "mongo --quiet --eval 'quit(db.runCommand({ ping: 1 }).ok ? 0 : 2)'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+volumes:
+  mongo_auth_data:
+  mongo_product_data:
+  mongo_order_data:
+
+networks:
+  frontend:
+  backend:
+    internal: true
+  data-auth:
+    internal: true
+  data-product:
+    internal: true
+  data-order:
+    internal: true

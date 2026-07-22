@@ -1,0 +1,143 @@
+name: ecommerce-vue-staging
+
+x-app-deploy: &app-deploy
+  replicas: 2
+  restart_policy:
+    condition: on-failure
+    delay: 5s
+    max_attempts: 3
+  update_config:
+    parallelism: 1
+    delay: 10s
+    order: start-first
+    failure_action: rollback
+  rollback_config:
+    parallelism: 1
+    order: stop-first
+
+services:
+  frontend:
+    image: "${CI_REGISTRY_IMAGE:?CI_REGISTRY_IMAGE is required}/frontend:${IMAGE_TAG:?IMAGE_TAG is required}"
+    environment:
+      AUTH_SERVICE_URL: http://auth-service:3001
+      PRODUCT_SERVICE_URL: http://product-service:3000
+      ORDER_SERVICE_URL: http://order-service:3002
+    ports:
+      - "${STAGING_FRONTEND_PORT:-8081}:8080"
+    networks: [frontend, backend]
+    deploy: *app-deploy
+
+  auth-service:
+    image: "${CI_REGISTRY_IMAGE:?CI_REGISTRY_IMAGE is required}/auth-service:${IMAGE_TAG:?IMAGE_TAG is required}"
+    environment:
+      APP_ENV: staging
+      NODE_ENV: production
+      CORS_ORIGIN: "${STAGING_CORS_ORIGIN:?STAGING_CORS_ORIGIN is required}"
+      JWT_SECRET_FILE: /run/secrets/jwt_secret
+      MONGODB_URI: mongodb://mongo-auth:27017/auth_staging
+    secrets: [jwt_secret]
+    networks: [backend, data-auth]
+    deploy: *app-deploy
+
+  product-service:
+    image: "${CI_REGISTRY_IMAGE:?CI_REGISTRY_IMAGE is required}/product-service:${IMAGE_TAG:?IMAGE_TAG is required}"
+    environment:
+      APP_ENV: staging
+      NODE_ENV: production
+      CORS_ORIGIN: "${STAGING_CORS_ORIGIN:?STAGING_CORS_ORIGIN is required}"
+      MONGODB_URI: mongodb://mongo-product:27017/products_staging
+    networks: [backend, data-product]
+    deploy: *app-deploy
+
+  order-service:
+    image: "${CI_REGISTRY_IMAGE:?CI_REGISTRY_IMAGE is required}/order-service:${IMAGE_TAG:?IMAGE_TAG is required}"
+    environment:
+      APP_ENV: staging
+      NODE_ENV: production
+      CORS_ORIGIN: "${STAGING_CORS_ORIGIN:?STAGING_CORS_ORIGIN is required}"
+      JWT_SECRET_FILE: /run/secrets/jwt_secret
+      MONGODB_URI: mongodb://mongo-order:27017/orders_staging
+      PRODUCT_SERVICE_URL: http://product-service:3000
+    secrets: [jwt_secret]
+    networks: [backend, data-order]
+    deploy: *app-deploy
+
+  mongo-auth:
+    image: mongo:4.4.18
+    command: ["mongod", "--bind_ip_all"]
+    volumes:
+      - mongo_auth_staging_data:/data/db
+    networks: [data-auth]
+    healthcheck:
+      test: ["CMD-SHELL", "mongo --quiet --eval 'quit(db.runCommand({ ping: 1 }).ok ? 0 : 2)'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      placement:
+        constraints: [node.role == manager]
+
+  mongo-product:
+    image: mongo:4.4.18
+    command: ["mongod", "--bind_ip_all"]
+    volumes:
+      - mongo_product_staging_data:/data/db
+    networks: [data-product]
+    healthcheck:
+      test: ["CMD-SHELL", "mongo --quiet --eval 'quit(db.runCommand({ ping: 1 }).ok ? 0 : 2)'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      placement:
+        constraints: [node.role == manager]
+
+  mongo-order:
+    image: mongo:4.4.18
+    command: ["mongod", "--bind_ip_all"]
+    volumes:
+      - mongo_order_staging_data:/data/db
+    networks: [data-order]
+    healthcheck:
+      test: ["CMD-SHELL", "mongo --quiet --eval 'quit(db.runCommand({ ping: 1 }).ok ? 0 : 2)'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      placement:
+        constraints: [node.role == manager]
+
+secrets:
+  jwt_secret:
+    external: true
+    name: ecommerce_staging_jwt_secret
+
+volumes:
+  mongo_auth_staging_data:
+  mongo_product_staging_data:
+  mongo_order_staging_data:
+
+networks:
+  frontend:
+    driver: overlay
+  backend:
+    driver: overlay
+    internal: true
+  data-auth:
+    driver: overlay
+    internal: true
+  data-product:
+    driver: overlay
+    internal: true
+  data-order:
+    driver: overlay
+    internal: true

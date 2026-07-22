@@ -24,8 +24,23 @@ fi
 
 : "${CI_REGISTRY_IMAGE:?CI_REGISTRY_IMAGE doit pointer vers le GitLab Container Registry}"
 : "${IMAGE_TAG:?IMAGE_TAG doit correspondre au tag image a deployer}"
-if [ "${COMPOSE_FILE}" != "docker-compose.dev.yml" ]; then
-  : "${JWT_SECRET:?JWT_SECRET doit etre defini hors depot pour staging/production}"
+case "${COMPOSE_FILE}" in
+  docker-compose.staging.yml)
+    SWARM_SECRET_NAME="${SWARM_SECRET_NAME:-ecommerce_staging_jwt_secret}"
+    ;;
+  docker-compose.prod.yml)
+    SWARM_SECRET_NAME="${SWARM_SECRET_NAME:-ecommerce_production_jwt_secret}"
+    ;;
+  *)
+    SWARM_SECRET_NAME="${SWARM_SECRET_NAME:-}"
+    ;;
+esac
+
+if [ -n "${SWARM_SECRET_NAME}" ]; then
+  if ! docker secret inspect "${SWARM_SECRET_NAME}" >/dev/null 2>&1; then
+    error "Secret Swarm absent: ${SWARM_SECRET_NAME}"
+    exit 1
+  fi
 fi
 
 info "Deploiement Docker Swarm de ${STACK_NAME} avec ${COMPOSE_FILE}"

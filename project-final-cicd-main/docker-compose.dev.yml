@@ -1,0 +1,140 @@
+name: ecommerce-vue-dev
+
+services:
+  frontend:
+    image: "${CI_REGISTRY_IMAGE:-ecommerce-vue}/frontend:${IMAGE_TAG:-dev}"
+    build:
+      context: ./frontend
+      target: development
+    environment:
+      AUTH_SERVICE_URL: http://auth-service:3001
+      PRODUCT_SERVICE_URL: http://product-service:3000
+      ORDER_SERVICE_URL: http://order-service:3002
+    ports:
+      - "${DEV_FRONTEND_PORT:-8082}:8080"
+    networks: [frontend, backend]
+    depends_on: [auth-service, product-service, order-service]
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  auth-service:
+    image: "${CI_REGISTRY_IMAGE:-ecommerce-vue}/auth-service:${IMAGE_TAG:-dev}"
+    build:
+      context: ./services/auth-service
+      target: development
+    environment:
+      APP_ENV: development
+      CORS_ORIGIN: "${DEV_CORS_ORIGIN:-http://localhost:8082}"
+      JWT_SECRET: "${DEV_JWT_SECRET:-dev_jwt_secret_change_me}"
+      MONGODB_URI: mongodb://mongo-auth:27017/auth_dev
+    networks: [backend, data-auth]
+    depends_on: [mongo-auth]
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  product-service:
+    image: "${CI_REGISTRY_IMAGE:-ecommerce-vue}/product-service:${IMAGE_TAG:-dev}"
+    build:
+      context: ./services/product-service
+      target: development
+    environment:
+      APP_ENV: development
+      CORS_ORIGIN: "${DEV_CORS_ORIGIN:-http://localhost:8082}"
+      MONGODB_URI: mongodb://mongo-product:27017/products_dev
+    networks: [backend, data-product]
+    depends_on: [mongo-product]
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  order-service:
+    image: "${CI_REGISTRY_IMAGE:-ecommerce-vue}/order-service:${IMAGE_TAG:-dev}"
+    build:
+      context: ./services/order-service
+      target: development
+    environment:
+      APP_ENV: development
+      CORS_ORIGIN: "${DEV_CORS_ORIGIN:-http://localhost:8082}"
+      JWT_SECRET: "${DEV_JWT_SECRET:-dev_jwt_secret_change_me}"
+      MONGODB_URI: mongodb://mongo-order:27017/orders_dev
+      PRODUCT_SERVICE_URL: http://product-service:3000
+    networks: [backend, data-order]
+    depends_on: [mongo-order]
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  mongo-auth:
+    image: mongo:4.4.18
+    command: ["mongod", "--bind_ip_all"]
+    volumes:
+      - mongo_auth_dev_data:/data/db
+    networks: [data-auth]
+    healthcheck:
+      test: ["CMD-SHELL", "mongo --quiet --eval 'quit(db.runCommand({ ping: 1 }).ok ? 0 : 2)'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  mongo-product:
+    image: mongo:4.4.18
+    command: ["mongod", "--bind_ip_all"]
+    volumes:
+      - mongo_product_dev_data:/data/db
+    networks: [data-product]
+    healthcheck:
+      test: ["CMD-SHELL", "mongo --quiet --eval 'quit(db.runCommand({ ping: 1 }).ok ? 0 : 2)'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  mongo-order:
+    image: mongo:4.4.18
+    command: ["mongod", "--bind_ip_all"]
+    volumes:
+      - mongo_order_dev_data:/data/db
+    networks: [data-order]
+    healthcheck:
+      test: ["CMD-SHELL", "mongo --quiet --eval 'quit(db.runCommand({ ping: 1 }).ok ? 0 : 2)'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+volumes:
+  mongo_auth_dev_data:
+  mongo_product_dev_data:
+  mongo_order_dev_data:
+
+networks:
+  frontend:
+    driver: overlay
+  backend:
+    driver: overlay
+    internal: true
+  data-auth:
+    driver: overlay
+    internal: true
+  data-product:
+    driver: overlay
+    internal: true
+  data-order:
+    driver: overlay
+    internal: true
