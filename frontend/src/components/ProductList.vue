@@ -21,9 +21,7 @@
 </template>
 
 <script>
-import { ref, onMounted } from 'vue';
-import { productService } from '../services/productService';
-import { cartService } from '../services/cartService';
+import { ref } from 'vue';
 
 export default {
   name: 'ProductList',

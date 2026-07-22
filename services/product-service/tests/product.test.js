@@ -1,5 +1,4 @@
 import request from 'supertest';
-import mongoose from 'mongoose';
 import app from '../src/app.js';
 import Product from '../src/models/product.js';
 
