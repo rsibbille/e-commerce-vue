@@ -25,7 +25,7 @@ default:
       - no_updates_canceling
 
 .node-job:
-  image: node:20-bookworm-slim
+  image: node:24-bookworm-slim
   cache:
     key: "npm-${CI_COMMIT_REF_SLUG}"
     paths:
@@ -228,10 +228,39 @@ trivy_images:
     paths:
       - .trivycache/
   script:
-    - trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed "$CI_REGISTRY_IMAGE/frontend:$CI_COMMIT_SHA"
-    - trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed "$CI_REGISTRY_IMAGE/auth-service:$CI_COMMIT_SHA"
-    - trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed "$CI_REGISTRY_IMAGE/product-service:$CI_COMMIT_SHA"
-    - trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed "$CI_REGISTRY_IMAGE/order-service:$CI_COMMIT_SHA"
+    - mkdir -p trivy-reports
+    - |
+      scan_status=0
+      for service in frontend auth-service product-service order-service; do
+        image="$CI_REGISTRY_IMAGE/$service:$CI_COMMIT_SHA"
+        report="trivy-reports/$service.json"
+        echo "=== Scan Trivy de $image ==="
+        trivy image \
+          --scanners vuln \
+          --ignore-unfixed \
+          --severity HIGH,CRITICAL \
+          --exit-code 0 \
+          --format json \
+          --output "$report" \
+          "$image"
+        if ! trivy image \
+          --scanners vuln \
+          --ignore-unfixed \
+          --severity HIGH,CRITICAL \
+          --exit-code 1 \
+          "$image"; then
+          echo "ÉCHEC Trivy : $image contient des vulnérabilités HIGH ou CRITICAL corrigibles."
+          scan_status=1
+        else
+          echo "SUCCÈS Trivy : $image"
+        fi
+      done
+      exit "$scan_status"
+  artifacts:
+    when: always
+    paths:
+      - trivy-reports/*.json
+    expire_in: 1 week
   rules:
     - if: '$CI_COMMIT_BRANCH =~ /^(develop|main)$/'
     - if: '$CI_COMMIT_BRANCH =~ /^release\/.+$/'

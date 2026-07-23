@@ -1,4 +1,4 @@
-FROM node:20-bookworm-slim AS base
+FROM node:24-bookworm-slim AS base
 WORKDIR /app
 COPY package.json package-lock.json ./
 
@@ -20,7 +20,17 @@ FROM base AS production-dependencies
 ENV NODE_ENV=production
 RUN npm ci --omit=dev && npm cache clean --force
 
-FROM node:20-bookworm-slim AS runtime
+FROM node:24-bookworm-slim AS runtime
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+       /usr/local/lib/node_modules/npm \
+       /usr/local/lib/node_modules/corepack \
+       /opt/yarn* \
+       /usr/local/bin/npm /usr/local/bin/npx \
+       /usr/local/bin/yarn /usr/local/bin/yarnpkg \
+       /usr/local/bin/corepack /usr/local/bin/pnpm /usr/local/bin/pnpx
 WORKDIR /app
 ENV NODE_ENV=production \
     PORT=3000
