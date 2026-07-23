@@ -368,7 +368,7 @@ Les images CI passent par le Dependency Proxy GitLab pour limiter les timeouts e
 
 - `docker:24`
 - `docker:24-dind`
-- `node:20-bookworm-slim`
+- `node:24-bookworm-slim`
 - `mongo:4.4.18`
 - `aquasec/trivy:latest`
 
