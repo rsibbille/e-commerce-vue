@@ -1,4 +1,3 @@
-name: ecommerce-vue-production
 
 x-app-deploy: &app-deploy
   replicas: 2
