@@ -292,7 +292,26 @@ trivy_images:
         fi
         sleep 5
       done
-    - wget -q -O /dev/null "$ENVIRONMENT_URL/api/products"
+    - |
+      attempt=1
+      while [ "$attempt" -le 30 ]; do
+        echo "Tentative de readiness product-service $attempt/30 : $ENVIRONMENT_URL/api/products"
+        if wget -q -O /dev/null "$ENVIRONMENT_URL/api/products"; then
+          echo "product-service est prêt."
+          break
+        fi
+
+        if [ "$attempt" -eq 30 ]; then
+          echo "ÉCHEC : product-service n'est pas prêt après 30 tentatives."
+          docker stack services "$STACK_NAME" || true
+          docker service ps --no-trunc "${STACK_NAME}_product-service" || true
+          docker service logs --tail 100 "${STACK_NAME}_product-service" || true
+          exit 1
+        fi
+
+        sleep 5
+        attempt=$((attempt + 1))
+      done
   environment:
     name: "$ENVIRONMENT_NAME"
     url: "$ENVIRONMENT_URL"
